@@ -30,11 +30,9 @@ GITHUB_BASE = "https://github.com/kimngkq/esp-flashcards/blob/main/flashcards.js
 
 # ── Bulk parse helper ─────────────────────────────────────────────────────────
 def parse_upload(file) -> list[dict]:
-    """Parse a CSV or text file into a list of {question, answer} dicts."""
     filename = file.name.lower()
     content = file.read().decode("utf-8", errors="ignore")
     cards = []
-
     if filename.endswith(".csv"):
         reader = csv.reader(io.StringIO(content))
         for row in reader:
@@ -43,14 +41,12 @@ def parse_upload(file) -> list[dict]:
                 if q and a:
                     cards.append({"question": q, "answer": a})
     else:
-        # Plain text: each line should be "question : answer"
         for line in content.splitlines():
             if ":" in line:
                 parts = line.split(":", 1)
                 q, a = parts[0].strip(), parts[1].strip()
                 if q and a:
                     cards.append({"question": q, "answer": a})
-
     return cards
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -63,7 +59,6 @@ tab1, tab2, tab3 = st.tabs(["Create", "Study", "Edit"])
 with tab1:
     st.header("Create a new deck")
     deck_name = st.text_input("Deck name", placeholder="e.g. Spanish Verbs")
-
     input_method = st.radio("How do you want to add cards?", ["Type manually", "Upload file"])
 
     if input_method == "Type manually":
@@ -120,17 +115,23 @@ with tab1:
             if not parsed:
                 st.error("Couldn't find any cards in that file. Make sure it matches the format above.")
             else:
-                st.success(f"Found {len(parsed)} cards — preview:")
-                for i, card in enumerate(parsed[:5]):
-                    st.markdown(f"**{i+1}.** {card['question']} → {card['answer']}")
-                if len(parsed) > 5:
-                    st.caption(f"... and {len(parsed) - 5} more")
+                # Store parsed cards in session state so they survive reruns
+                st.session_state["parsed_upload"] = parsed
 
-                if st.button("💾 Save deck", disabled=not deck_name):
-                    all_decks[deck_name] = parsed
-                    save_flashcards(all_decks)
-                    st.success(f"Saved {len(parsed)} cards to '{deck_name}'!")
-                    st.rerun()
+        if "parsed_upload" in st.session_state:
+            parsed = st.session_state["parsed_upload"]
+            st.success(f"Found {len(parsed)} cards — preview:")
+            for i, card in enumerate(parsed[:5]):
+                st.markdown(f"**{i+1}.** {card['question']} → {card['answer']}")
+            if len(parsed) > 5:
+                st.caption(f"... and {len(parsed) - 5} more")
+
+            if st.button("💾 Save deck", disabled=not deck_name, key="save_upload"):
+                all_decks[deck_name] = parsed
+                save_flashcards(all_decks)
+                st.success(f"Saved {len(parsed)} cards to '{deck_name}'!")
+                del st.session_state["parsed_upload"]
+                st.rerun()
 
 # ── STUDY ─────────────────────────────────────────────────────────────────────
 with tab2:
@@ -172,19 +173,29 @@ with tab2:
             st.progress((idx + 1) / len(cards), text=f"Card {idx + 1} of {len(cards)}")
             st.markdown(f"### ❓ {cards[idx]['question']}")
 
-            if st.button("Show Answer"):
-                st.session_state["show"] = True
-            if st.session_state.get("show"):
+            # Single button that toggles between Show Answer and Next
+            if not st.session_state.get("show"):
+                if st.button("👁 Show Answer", use_container_width=True):
+                    st.session_state["show"] = True
+                    st.rerun()
+            else:
                 st.success(cards[idx]["answer"])
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("⬅ Prev") and idx > 0:
-                        st.session_state["idx"] -= 1
+                if idx < len(cards) - 1:
+                    if st.button("Next ➡", use_container_width=True):
+                        st.session_state["idx"] += 1
                         st.session_state["show"] = False
                         st.rerun()
-                with col2:
-                    if st.button("Next ➡") and idx < len(cards) - 1:
-                        st.session_state["idx"] += 1
+                else:
+                    st.info("🎉 You've reached the end of the deck!")
+                    if st.button("🔁 Start again", use_container_width=True):
+                        st.session_state["idx"] = 0
+                        st.session_state["show"] = False
+                        st.rerun()
+
+                # Keep prev button as a secondary option below
+                if idx > 0:
+                    if st.button("⬅ Previous", use_container_width=True):
+                        st.session_state["idx"] -= 1
                         st.session_state["show"] = False
                         st.rerun()
 
@@ -203,7 +214,6 @@ with tab3:
         if "edit_deck" in st.session_state and st.session_state["edit_deck"] == chosen:
             st.subheader(f"Editing: {st.session_state['edit_deck']}")
 
-            # Bulk append via file upload
             with st.expander("➕ Bulk add cards from file"):
                 st.markdown("Upload a CSV or text file to append cards to this deck.")
                 bulk_file = st.file_uploader("Upload file", type=["csv", "txt"], key="bulk_edit")
@@ -212,17 +222,24 @@ with tab3:
                     if not bulk_parsed:
                         st.error("Couldn't find any cards in that file.")
                     else:
-                        st.success(f"Found {len(bulk_parsed)} cards to append.")
-                        for i, card in enumerate(bulk_parsed[:5]):
-                            st.markdown(f"**{i+1}.** {card['question']} → {card['answer']}")
-                        if len(bulk_parsed) > 5:
-                            st.caption(f"... and {len(bulk_parsed) - 5} more")
-                        if st.button("Append to deck"):
-                            st.session_state["edit_cards"].extend(bulk_parsed)
-                            st.success(f"Added {len(bulk_parsed)} cards!")
-                            st.rerun()
+                        st.session_state["bulk_parsed"] = bulk_parsed
 
-            # Manual card editing
+            if "bulk_parsed" in st.session_state:
+                bulk_parsed = st.session_state["bulk_parsed"]
+                st.success(f"Found {len(bulk_parsed)} cards to append.")
+                for i, card in enumerate(bulk_parsed[:5]):
+                    st.markdown(f"**{i+1}.** {card['question']} → {card['answer']}")
+                if len(bulk_parsed) > 5:
+                    st.caption(f"... and {len(bulk_parsed) - 5} more")
+                if st.button("Append to deck"):
+                    st.session_state["edit_cards"].extend(bulk_parsed)
+                    del st.session_state["bulk_parsed"]
+                    # Auto-save immediately
+                    all_decks[st.session_state["edit_deck"]] = st.session_state["edit_cards"]
+                    save_flashcards(all_decks)
+                    st.success(f"Added {len(bulk_parsed)} cards and saved!")
+                    st.rerun()
+
             for i, card in enumerate(st.session_state["edit_cards"]):
                 st.markdown(f"**Card {i+1}**")
                 col1, col2, col3 = st.columns([3, 3, 1])
@@ -253,4 +270,3 @@ with tab3:
                     del st.session_state["edit_deck"]
                     del st.session_state["edit_cards"]
                     st.rerun()
-                    

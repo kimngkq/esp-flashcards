@@ -11,6 +11,14 @@
     {
       "question": "cow",
       "answer": "vaca"
+    },
+    {
+      "question": "bear",
+      "answer": "oso"
+    },
+    {
+      "question": "rabbit",
+      "answer": "conejo"
     }
   ]
 }

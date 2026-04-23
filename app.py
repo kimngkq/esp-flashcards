@@ -232,12 +232,12 @@ with tab3:
                 if len(bulk_parsed) > 5:
                     st.caption(f"... and {len(bulk_parsed) - 5} more")
                 if st.button("Append to deck"):
-                    st.session_state["edit_cards"].extend(bulk_parsed)
+                    deck_key = st.session_state["edit_deck"]
+                    updated_cards = st.session_state["edit_cards"] + bulk_parsed
+                    st.session_state["edit_cards"] = updated_cards
+                    st.session_state.all_decks[deck_key] = updated_cards
+                    save_flashcards(st.session_state.all_decks)
                     del st.session_state["bulk_parsed"]
-                    # Auto-save immediately
-                    all_decks[st.session_state["edit_deck"]] = st.session_state["edit_cards"]
-                    save_flashcards(all_decks)
-                    st.success(f"Added {len(bulk_parsed)} cards and saved!")
                     st.rerun()
 
             for i, card in enumerate(st.session_state["edit_cards"]):
